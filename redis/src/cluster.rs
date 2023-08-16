@@ -58,6 +58,7 @@ use crate::{
     cluster_client::ClusterParams,
     cluster_routing::{Redirect, Routable, Route, RoutingInfo, Slot, SlotMap, SLOT_SIZE},
 };
+use crate::{IntoConnectionInfo, PushKind};
 
 pub use crate::cluster_client::{ClusterClient, ClusterClientBuilder};
 pub use crate::cluster_pipeline::{cluster_pipe, ClusterPipeline};
@@ -666,6 +667,10 @@ impl<C: Connect + ConnectionLike> ConnectionLike for ClusterConnection<C> {
             }
         }
         true
+    }
+
+    fn execute_push_message(&mut self, _kind: PushKind, _data: Vec<Value>) {
+        // TODO - implement handling RESP3 push messages
     }
 }
 
