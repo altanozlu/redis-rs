@@ -128,6 +128,8 @@ pub enum ErrorKind {
     NoValidReplicasFoundBySentinel,
     /// At least one sentinel connection info is required
     EmptySentinelList,
+    /// Attempted to kill a script/function while they werent' executing
+    NotBusy,
 
     #[cfg(feature = "json")]
     /// Error Serializing a struct to JSON form
@@ -597,6 +599,7 @@ impl RedisError {
             ErrorKind::CrossSlot => Some("CROSSSLOT"),
             ErrorKind::MasterDown => Some("MASTERDOWN"),
             ErrorKind::ReadOnly => Some("READONLY"),
+            ErrorKind::NotBusy => Some("NOTBUSY"),
             _ => match self.repr {
                 ErrorRepr::ExtensionError(ref code, _) => Some(code),
                 _ => None,
@@ -627,6 +630,7 @@ impl RedisError {
             ErrorKind::MasterNameNotFoundBySentinel => "master name not found by sentinel",
             ErrorKind::NoValidReplicasFoundBySentinel => "no valid replicas found by sentinel",
             ErrorKind::EmptySentinelList => "empty sentinel list",
+            ErrorKind::NotBusy => "not busy",
             #[cfg(feature = "json")]
             ErrorKind::Serialize => "serializing",
             ErrorKind::RESP3NotSupported => "resp3 is not supported by server",
@@ -778,6 +782,7 @@ impl RedisError {
             ErrorKind::CrossSlot => false,
             ErrorKind::ClientError => false,
             ErrorKind::EmptySentinelList => false,
+            ErrorKind::NotBusy => false,
             #[cfg(feature = "json")]
             ErrorKind::Serialize => false,
             ErrorKind::RESP3NotSupported => false,
