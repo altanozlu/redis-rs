@@ -1,43 +1,20 @@
 use criterion::{criterion_group, criterion_main, Bencher, Criterion, Throughput};
-use redis::Cmd;
-
 use support::*;
 
 #[path = "../tests/support/mod.rs"]
 mod support;
 
-use rand::{
-    distr::{Bernoulli, Distribution},
-    Rng,
-};
+use rand::distr::{Bernoulli, Distribution};
 use redis::caching::CacheConfig;
-use std::env;
-fn generate_commands(key: String, total_command: u32, total_read: u32) -> Vec<Cmd> {
-    let mut cmds = vec![];
-    let mut rng = rand::rng();
-    let distribution = Bernoulli::from_ratio(total_read, total_command).unwrap();
-    for is_read in distribution
-        .sample_iter(&mut rand::rng())
-        .take(total_command as usize)
-    {
-        if is_read {
-            cmds.push(redis::cmd("GET").arg(&key).clone());
-        } else {
-            cmds.push(
-                redis::cmd("SET")
-                    .arg(&key)
-                    .arg(rng.random_range(1..1000))
-                    .clone(),
-            );
-        }
-    }
-    cmds
-}
+use std::{env, sync::Arc};
+use tokio::sync::Semaphore;
+
+const CONCURRENT_TASKS: usize = 1024;
 
 async fn benchmark_executer(
     is_cache_enabled: bool,
     read_ratio: f32,
-    per_key_command: u32,
+    command_count_per_key: u32,
     key_count: u32,
 ) {
     let ctx = TestContext::new();
@@ -49,17 +26,31 @@ async fn benchmark_executer(
         ctx.multiplexed_async_connection_tokio().await.unwrap()
     };
 
-    let mut rng = rand::rng();
     let mut handles = Vec::new();
-    for _ in 0..key_count {
+
+    let read_command_count_per_key = (read_ratio * command_count_per_key as f32) as u32;
+    let distribution =
+        Bernoulli::from_ratio(read_command_count_per_key, command_count_per_key).unwrap();
+    let sem = Arc::new(Semaphore::new(CONCURRENT_TASKS));
+
+    for num in 0..key_count {
         let mut con = con.clone();
-        let key = format!("{}", rng.random_range(1..1000));
+        let key = format!("{}", num);
+        let read_write_distribution: Vec<bool> = distribution
+            .sample_iter(&mut rand::rng())
+            .take(command_count_per_key as usize)
+            .collect();
+
+        let permit = Arc::clone(&sem).acquire_owned().await;
+
         handles.push(tokio::spawn(async move {
-            for cmd in generate_commands(
-                key,
-                per_key_command,
-                (read_ratio * per_key_command as f32) as u32,
-            ) {
+            let _permit = permit;
+            for is_read in read_write_distribution {
+                let cmd = if is_read {
+                    redis::cmd("GET").arg(&key).clone()
+                } else {
+                    redis::cmd("SET").arg(&key).arg(9).clone() // Random value for key
+                };
                 let _: () = cmd.query_async(&mut con).await.unwrap();
             }
         }));
